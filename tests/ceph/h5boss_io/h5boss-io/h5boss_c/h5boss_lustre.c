@@ -67,11 +67,16 @@ int main(int argc, char* argv[])
                 printf("Dimension is %s!\n", dset_ndim);
                 continue;
             }
+            /* DER - If you want to create intermediate groups, comment this
+             * string replacement code out and uncomment the lcpl code,
+             * below.
+             */
+/*
             for (j = 0; j < strlen(all_dset_names[i]); j++) {
                 if (all_dset_names[i][j] == '/') 
                     all_dset_names[i][j] = '-';
-                
             }
+*/                
             i++;
         }
 
@@ -107,6 +112,7 @@ int main(int argc, char* argv[])
 
     hid_t plist_id = H5Pcreate(H5P_FILE_ACCESS);
     hid_t file_id, dset_id, filespace;
+    hid_t lcpl_id;
     H5Pset_fapl_mpio(plist_id, MPI_COMM_WORLD, MPI_INFO_NULL);
     file_id = H5Fcreate(out_filename, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
     //H5Pclose(plist_id);
@@ -116,6 +122,24 @@ int main(int argc, char* argv[])
     }
     /* H5Fclose(file_id); */
 
+
+    /* DER - set lcpl
+     * The original intent of this code was to create intermediate
+     * groups from the dataset name/path obtained from the file.
+     * The actual code just replaced the '/' path separator in
+     * the name with '-' and ignored the intermediate group
+     * creation.
+     *
+     * If you want to re-enable that code, uncomment the
+     * H5Pset_create_intermediate_group() call below and
+     * ensure the code that does the string replacement
+     * (above, annotated) is commented out.
+     */
+	if((lcpl_id = H5Pcreate(H5P_LINK_CREATE)) < 0)
+	    goto done;
+    if(H5Pset_create_intermediate_group(lcpl_id, 1) < 0)
+        goto done;
+
     MPI_Barrier(MPI_COMM_WORLD);
     timer_on(1); 
     hsize_t dims[3] = {0};
@@ -124,11 +148,12 @@ int main(int argc, char* argv[])
         filespace = H5Screate_simple(1, dims, NULL); 
 
         dset_id = H5Dcreate(file_id, all_dset_names[i], H5T_NATIVE_CHAR, filespace, 
-                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+                            lcpl_id, H5P_DEFAULT, H5P_DEFAULT);
         H5Sclose(filespace);
         H5Dclose(dset_id);
     }
     H5Fclose(file_id);
+    H5Pclose(lcpl_id); 
     MPI_Barrier (MPI_COMM_WORLD);
     timer_off(1);
     file_id=H5Fopen(out_filename, H5F_ACC_RDWR, plist_id);
@@ -189,7 +214,7 @@ int main(int argc, char* argv[])
     {
 	timer_msg(1);//dset creation cost
         timer_msg(0);//dset write cost
-        printf("%ld MB\n",tsize/1024/1024);
+        printf("%lld MB\n",tsize/1024/1024);
     }
 
     
@@ -197,7 +222,6 @@ int main(int argc, char* argv[])
 done:
     H5E_BEGIN_TRY {
         H5Fclose(file_id);
-        
     } H5E_END_TRY;
         (void)MPI_Finalize();
 
